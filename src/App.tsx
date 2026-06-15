@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
 
 interface LogEntry {
@@ -36,6 +38,82 @@ function App() {
       { timestamp: new Date().toLocaleTimeString(), message }
     ]);
   }
+
+  const [currentVersion, setCurrentVersion] = useState("0.1.0");
+  const [checking, setChecking] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "available" | "no-update" | "downloading" | "error">("idle");
+  const [updateError, setUpdateError] = useState("");
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; body?: string } | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [activeUpdate, setActiveUpdate] = useState<any>(null);
+
+  async function checkForUpdate(manual: boolean) {
+    if (checking || updateStatus === "downloading") return;
+    setChecking(true);
+    setUpdateStatus("checking");
+    if (manual) addLog("Checking for software updates...");
+    
+    try {
+      const update = await check();
+      if (update) {
+        setUpdateInfo({ version: update.version, body: update.body });
+        setCurrentVersion(update.currentVersion);
+        setUpdateStatus("available");
+        setActiveUpdate(update);
+        addLog(`Update found: version ${update.version} (current: ${update.currentVersion})`);
+      } else {
+        setUpdateStatus("no-update");
+        setActiveUpdate(null);
+        if (manual) addLog("No updates available. Your app is up to date.");
+      }
+    } catch (err) {
+      setUpdateStatus("error");
+      setUpdateError(String(err));
+      addLog(`Failed to check for updates: ${err}`);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function installUpdate() {
+    if (!activeUpdate) return;
+    setUpdateStatus("downloading");
+    addLog(`Initiating download and installation of version ${updateInfo?.version}...`);
+    
+    try {
+      let downloaded = 0;
+      let contentLength = 0;
+      
+      await activeUpdate.downloadAndInstall((event: any) => {
+        switch (event.event) {
+          case 'Started':
+            contentLength = event.data.contentLength || 0;
+            addLog(`Download started. Size: ${(contentLength / (1024 * 1024)).toFixed(2)} MB`);
+            break;
+          case 'Progress':
+            downloaded += event.data.chunkLength;
+            if (contentLength > 0) {
+              const progress = Math.round((downloaded / contentLength) * 100);
+              setDownloadProgress(progress);
+            }
+            break;
+          case 'Finished':
+            addLog("Download complete. Installing and restarting application...");
+            break;
+        }
+      });
+      
+      await relaunch();
+    } catch (err) {
+      setUpdateStatus("error");
+      setUpdateError(String(err));
+      addLog(`Update installation failed: ${err}`);
+    }
+  }
+
+  useEffect(() => {
+    checkForUpdate(false);
+  }, []);
 
   return (
     <>
@@ -118,6 +196,89 @@ function App() {
 
             <div className={`result-box ${!greetMsg ? "empty" : ""}`}>
               {greetMsg ? greetMsg : "Awaiting response from native handler..."}
+            </div>
+          </section>
+
+          <section className="glass-card">
+            <div className="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 8 12 12 16 14"/>
+              </svg>
+              <span>Software Update Engine</span>
+            </div>
+            
+            <p className="card-desc" style={{ color: "var(--color-text-muted)", fontSize: "0.95rem" }}>
+              Check for new releases, verify signature integrity, and install updates.
+            </p>
+
+            <div className="update-control-panel">
+              <div className="update-meta">
+                <div className="version-info">
+                  Active Version: <span className="version-badge">v{currentVersion}</span>
+                </div>
+                
+                <div className="status-info">
+                  Status: {
+                    updateStatus === "idle" && <span className="status-text">Ready</span>
+                  }
+                  {
+                    updateStatus === "checking" && <span className="status-text pulse">Checking...</span>
+                  }
+                  {
+                    updateStatus === "no-update" && <span className="status-text success">Up to date</span>
+                  }
+                  {
+                    updateStatus === "available" && <span className="status-text warning">Update Available</span>
+                  }
+                  {
+                    updateStatus === "downloading" && <span className="status-text info">Downloading ({downloadProgress}%)</span>
+                  }
+                  {
+                    updateStatus === "error" && <span className="status-text danger">Check Failed</span>
+                  }
+                </div>
+              </div>
+
+              {updateStatus === "available" && updateInfo && (
+                <div className="update-release-box">
+                  <div className="release-header">New Release: v{updateInfo.version}</div>
+                  {updateInfo.body && <div className="release-body">{updateInfo.body}</div>}
+                </div>
+              )}
+
+              {updateStatus === "error" && (
+                <div className="update-error-box">
+                  Error: {updateError}
+                </div>
+              )}
+
+              {updateStatus === "downloading" && (
+                <div className="progress-bar-container">
+                  <div className="progress-bar-fill" style={{ width: `${downloadProgress}%` }}></div>
+                </div>
+              )}
+
+              <div className="action-buttons" style={{ display: "flex", gap: "10px" }}>
+                <button 
+                  type="button"
+                  className="fancy-button secondary" 
+                  onClick={() => checkForUpdate(true)}
+                  disabled={checking || updateStatus === "downloading"}
+                >
+                  {checking ? "Checking..." : "Check for Updates"}
+                </button>
+
+                {updateStatus === "available" && (
+                  <button 
+                    type="button"
+                    className="fancy-button success" 
+                    onClick={installUpdate}
+                  >
+                    Install & Relaunch
+                  </button>
+                )}
+              </div>
             </div>
           </section>
 
