@@ -25,6 +25,12 @@ Ubah nomor versi di kedua berkas berikut:
    "version": "0.3.0"
    ```
 
+> [!IMPORTANT]
+   > **Kedua berkas di atas HARUS memiliki nomor versi yang sama persis.**
+   > * `package.json` mengatur versi sisi frontend.
+   > * `tauri.conf.json` mengatur versi sisi backend/native bundler.
+   > Jika tidak sama, proses update otomatis (auto-updater) akan mengalami konflik deteksi versi dan gagal berfungsi dengan benar.
+
 ### Langkah 2: Commit dan Push Perubahan ke GitHub
 Jalankan perintah git berikut untuk mengirim perubahan ke branch utama:
 ```bash
