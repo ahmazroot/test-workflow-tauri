@@ -20,11 +20,20 @@ for (const file of oldFiles) {
 }
 
 // 1. Tentukan path file updater & signature
-const macArmGz = path.join(RELEASE_DIR, `macos/${APP_NAME}_${VERSION}_aarch64.app.tar.gz`);
-const macArmSig = macArmGz + '.sig';
+const targetArch = process.arch === 'arm64' ? 'aarch64' : 'x64';
+const platformKey = process.arch === 'arm64' ? 'darwin-aarch64' : 'darwin-x86_64';
 
-const macIntelGz = path.join(RELEASE_DIR, `macos/${APP_NAME}_${VERSION}_x64.app.tar.gz`);
-const macIntelSig = macIntelGz + '.sig';
+let macGz = path.join(RELEASE_DIR, `macos/${APP_NAME}_${VERSION}_${targetArch}.app.tar.gz`);
+let macSig = macGz + '.sig';
+
+// Jika tidak ada nama spesifik, gunakan nama generic bawaan tauri
+if (!fs.existsSync(macGz)) {
+  const genericMacGz = path.join(RELEASE_DIR, 'macos/tauri-app.app.tar.gz');
+  if (fs.existsSync(genericMacGz)) {
+    macGz = genericMacGz;
+    macSig = genericMacGz + '.sig';
+  }
+}
 
 const winZip = path.join(RELEASE_DIR, `msi/${APP_NAME}_${VERSION}_x64_en-US.msi.zip`);
 const winSig = winZip + '.sig';
@@ -42,22 +51,12 @@ const latestJson = {
 // URL unduhan rilis GitHub publik
 const GITHUB_RELEASE_URL = `https://github.com/${GITHUB_USER}/${GITHUB_REPO}/releases/download/v${VERSION}`;
 
-// Tambahkan macOS ARM64
-if (fs.existsSync(macArmGz) && getSig(macArmSig)) {
-  const filename = path.basename(macArmGz);
-  fs.copyFileSync(macArmGz, path.join(OUTPUT_DIR, filename));
-  latestJson.platforms['darwin-aarch64'] = {
-    signature: getSig(macArmSig),
-    url: `${GITHUB_RELEASE_URL}/${filename}`
-  };
-}
-
-// Tambahkan macOS Intel x64
-if (fs.existsSync(macIntelGz) && getSig(macIntelSig)) {
-  const filename = path.basename(macIntelGz);
-  fs.copyFileSync(macIntelGz, path.join(OUTPUT_DIR, filename));
-  latestJson.platforms['darwin-x86_64'] = {
-    signature: getSig(macIntelSig),
+// Tambahkan macOS
+if (fs.existsSync(macGz) && getSig(macSig)) {
+  const filename = `${APP_NAME}_${VERSION}_${targetArch}.app.tar.gz`;
+  fs.copyFileSync(macGz, path.join(OUTPUT_DIR, filename));
+  latestJson.platforms[platformKey] = {
+    signature: getSig(macSig),
     url: `${GITHUB_RELEASE_URL}/${filename}`
   };
 }
